@@ -1,0 +1,58 @@
+[
+  {
+    "id": "gate-quanzhou",
+    "name": "泉州城门",
+    "cityId": "quanzhou",
+    "type": "gate",
+    "description": "泉州府衙城门验印处"
+  },
+  {
+    "id": "gate-guangzhou",
+    "name": "广州城门",
+    "cityId": "guangzhou",
+    "type": "gate",
+    "description": "广州都督府城门验印处"
+  },
+  {
+    "id": "gate-hangzhou",
+    "name": "杭州城门",
+    "cityId": "hangzhou",
+    "type": "gate",
+    "description": "杭州府城门验印处"
+  },
+  {
+    "id": "station-nanjing",
+    "name": "南京驿站",
+    "cityId": "nanjing",
+    "type": "station",
+    "description": "金陵驿站公文盖印处"
+  },
+  {
+    "id": "gate-beijing",
+    "name": "京城城门",
+    "cityId": "beijing",
+    "type": "gate",
+    "description": "帝都九门验印处"
+  },
+  {
+    "id": "station-wuhan",
+    "name": "武汉驿站",
+    "cityId": "wuhan",
+    "type": "station",
+    "description": "九省通衢驿站盖印处"
+  },
+  {
+    "id": "gate-chengdu",
+    "name": "成都城门",
+    "cityId": "chengdu",
+    "type": "gate",
+    "description": "蜀都城门验印处"
+  },
+  {
+    "id": "station-xian",
+    "name": "西安驿站",
+    "cityId": "xian",
+    "type": "station",
+    "description": "长安驿站公文盖印处"
+  }
+]

@@ -3,12 +3,14 @@ import type {
   Goods, 
   City, 
   Weather, 
-  GameEvent,
+  GameEvent, 
   Player,
   PlayerVehicle,
   Warehouse,
   SaveGame,
-  Trip
+  Trip,
+  OfficialDocument,
+  StampCheckpoint
 } from '../../shared/types';
 import { calculateReputationGrade, calculateWarehouseCapacity, calculateWarehouseUpgradeCost } from './settlement';
 
@@ -112,6 +114,7 @@ export const getRandomEvents = (
 };
 
 export const createInitialPlayer = (): Player => {
+  const officialRep = 0;
   return {
     id: generateId(),
     name: '月港邮差',
@@ -121,6 +124,8 @@ export const createInitialPlayer = (): Player => {
     priceBonus: 0,
     currentDay: 1,
     timeOfDay: 'morning',
+    officialReputation: officialRep,
+    officialRank: calculateOfficialRank(officialRep),
   };
 };
 
@@ -171,6 +176,7 @@ export const createInitialSaveGame = (): SaveGame => {
   return {
     player,
     commissions: [],
+    officialDocuments: [],
     trips: [],
     vehicles: createInitialVehicles(),
     warehouse: createInitialWarehouse(),
@@ -272,4 +278,140 @@ export const calculateIsLateGameTime = (
   const deadlineGameTime = acceptedGameHours + deadlineHours;
   const arrivalGameTime = departedGameHours + totalTripHours + extraDelay;
   return arrivalGameTime > deadlineGameTime;
+};
+
+export const FORBIDDEN_CATEGORIES_WITH_DOCUMENTS = ['饮品', '奢侈品', '食品'];
+
+export const canMixWithOfficialDocument = (
+  goodsList: Goods[],
+  commissionIds: string[],
+  commissions: Commission[]
+): boolean => {
+  const civilianCommissions = commissions.filter(
+    c => commissionIds.includes(c.id)
+  );
+  return civilianCommissions.every(c => {
+    const goods = goodsList.find(g => g.id === c.goodsId);
+    if (!goods) return false;
+    return !FORBIDDEN_CATEGORIES_WITH_DOCUMENTS.includes(goods.category);
+  });
+};
+
+export const calculateOfficialRank = (officialRep: number): string => {
+  if (officialRep >= 500) return '金牌信使';
+  if (officialRep >= 300) return '银牌信使';
+  if (officialRep >= 100) return '铜牌信使';
+  return '见习信使';
+};
+
+export const getAvailableDocumentGrade = (officialRep: number): ('ordinary' | 'urgent' | 'imperial')[] => {
+  const grades: ('ordinary' | 'urgent' | 'imperial')[] = ['ordinary'];
+  if (officialRep >= 100) grades.push('urgent');
+  if (officialRep >= 300) grades.push('imperial');
+  return grades;
+};
+
+export const generateOfficialDocuments = (
+  cities: City[],
+  stamps: StampCheckpoint[],
+  officialRep: number,
+  count: number = 2
+): OfficialDocument[] => {
+  const availableGrades = getAvailableDocumentGrade(officialRep);
+  const documents: OfficialDocument[] = [];
+  const destinations = cities.filter(c => c.id !== 'yuegang');
+
+  const gradeConfig = {
+    ordinary: { rewardBase: 800, deadlineBase: 16, stampCount: 2, titles: ['州府公文', '县衙令文', '户籍公文', '税赋清册'] },
+    urgent: { rewardBase: 2000, deadlineBase: 10, stampCount: 3, titles: ['军情急报', '漕运急令', '缉捕通文', '赈灾公文'] },
+    imperial: { rewardBase: 5000, deadlineBase: 8, stampCount: 4, titles: ['圣旨传谕', '御赐密函', '钦差令牌', '朝廷急递'] },
+  };
+
+  for (let i = 0; i < count; i++) {
+    const grade = availableGrades[Math.floor(Math.random() * availableGrades.length)];
+    const config = gradeConfig[grade];
+    const destination = destinations[Math.floor(Math.random() * destinations.length)];
+    const title = config.titles[Math.floor(Math.random() * config.titles.length)];
+
+    const relevantStamps = stamps.filter(
+      s => s.cityId === destination.id || 
+           isStampOnRoute(s.cityId, destination.id, cities)
+    );
+
+    const selectedStamps = relevantStamps
+      .sort(() => Math.random() - 0.5)
+      .slice(0, Math.min(config.stampCount, relevantStamps.length))
+      .map(s => s.id);
+
+    if (selectedStamps.length === 0) continue;
+
+    const rewardMultiplier = 1.1 + Math.random() * 0.4;
+    const reward = Math.floor(config.rewardBase * rewardMultiplier);
+    const deadlineVariance = Math.floor(Math.random() * 6) - 2;
+    const deadlineHours = Math.max(6, config.deadlineBase + deadlineVariance);
+
+    documents.push({
+      id: generateId(),
+      title: `${title} → ${destination.name}`,
+      destinationId: destination.id,
+      destinationName: destination.name,
+      reward,
+      deadlineHours,
+      requiredStamps: selectedStamps,
+      isAccepted: false,
+      obtainedStamps: [],
+      grade,
+      createdAt: Date.now(),
+    });
+  }
+
+  return documents;
+};
+
+export const isStampOnRoute = (
+  stampCityId: string,
+  destinationId: string,
+  cities: City[]
+): boolean => {
+  const importantCityIds = ['nanjing', 'wuhan', 'quanzhou', 'hangzhou'];
+  return importantCityIds.includes(stampCityId) || stampCityId === destinationId;
+};
+
+export const getStampsForRoute = (
+  route: { fromCityId: string; toCityId: string },
+  stamps: StampCheckpoint[],
+  requiredStampIds: string[]
+): StampCheckpoint[] => {
+  const routeCities = new Set<string>();
+  routeCities.add(route.fromCityId);
+  routeCities.add(route.toCityId);
+  const importantHubs = ['wuhan', 'nanjing', 'quanzhou', 'hangzhou'];
+  importantHubs.forEach(id => routeCities.add(id));
+
+  return stamps.filter(
+    s => requiredStampIds.includes(s.id) && routeCities.has(s.cityId)
+  );
+};
+
+export const calculateStampPenalty = (
+  requiredStamps: string[],
+  obtainedStamps: string[],
+  reward: number
+): number => {
+  const missingCount = requiredStamps.filter(
+    id => !obtainedStamps.includes(id)
+  ).length;
+  return Math.floor(reward * 0.2 * missingCount);
+};
+
+export const calculateOfficialRepChange = (
+  allStampsObtained: boolean,
+  grade: 'ordinary' | 'urgent' | 'imperial',
+  missingCount: number
+): number => {
+  const gradeBonus = { ordinary: 1, urgent: 2, imperial: 3 };
+  if (allStampsObtained) {
+    return 20 * gradeBonus[grade];
+  }
+  return -10 * missingCount;
 };

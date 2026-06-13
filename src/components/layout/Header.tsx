@@ -1,4 +1,4 @@
-import { Coins, Star, Calendar, Cloud, Save, RotateCcw } from 'lucide-react';
+import { Coins, Star, Calendar, Cloud, Save, RotateCcw, Shield } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import { getTimeOfDayName } from '../../utils/gameLogic';
 
@@ -61,6 +61,12 @@ const Header = () => {
                   {player.priceBonus > 0 ? '+' : ''}{player.priceBonus}%
                 </span>
               )}
+            </div>
+            
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 rounded-lg">
+              <Shield className="w-4 h-4 text-indigo-400" />
+              <span className="text-indigo-300 text-xs">{player.officialRank}</span>
+              <span className="text-indigo-400 font-bold text-sm">{player.officialReputation}</span>
             </div>
             
             <div className="flex items-center gap-2">

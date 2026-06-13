@@ -1,4 +1,4 @@
-import { CheckCircle, XCircle, AlertTriangle, TrendingUp, TrendingDown, Coins, Star, Package, X } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, TrendingUp, TrendingDown, Coins, Star, Package, X, Stamp, Shield } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import type { TripSettlement } from '../../utils/settlement';
 
@@ -8,7 +8,7 @@ interface SettlementModalProps {
 }
 
 const SettlementModal = ({ settlement, onClose }: SettlementModalProps) => {
-  const { closeSettlement } = useGameStore();
+  const { closeSettlement, stampCheckpoints } = useGameStore();
 
   const handleClose = () => {
     closeSettlement();
@@ -97,6 +97,82 @@ const SettlementModal = ({ settlement, onClose }: SettlementModalProps) => {
               </span>
             </div>
           </div>
+
+          {settlement.stampResult && (
+            <div className={`rounded-xl p-5 border-2 ${
+              settlement.stampResult.allStampsObtained
+                ? 'bg-indigo-50 border-indigo-200'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className={`w-5 h-5 ${settlement.stampResult.allStampsObtained ? 'text-indigo-500' : 'text-red-500'}`} />
+                <h4 className="font-semibold text-slate-800">公文盖印结果</h4>
+              </div>
+              
+              <div className="mb-3 text-sm text-slate-700">
+                <span className="font-medium">{settlement.stampResult.documentTitle}</span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <Stamp className="w-4 h-4 text-slate-400" />
+                  <span className="text-slate-600">盖印情况:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {settlement.stampResult.requiredStamps.map(stampId => {
+                      const stamp = stampCheckpoints.find(s => s.id === stampId);
+                      const obtained = settlement.stampResult!.obtainedStamps.includes(stampId);
+                      return (
+                        <span
+                          key={stampId}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                            obtained
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          {obtained ? '✓' : '✗'} {stamp?.name || stampId}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 text-sm">
+                  <div className={`flex items-center gap-1 ${
+                    settlement.stampResult.allStampsObtained ? 'text-emerald-600' : 'text-red-600'
+                  }`}>
+                    {settlement.stampResult.allStampsObtained ? (
+                      <CheckCircle className="w-4 h-4" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )}
+                    <span className="font-medium">
+                      {settlement.stampResult.allStampsObtained
+                        ? '印章齐全！'
+                        : `缺 ${settlement.stampResult.missingStamps.length} 印`}
+                    </span>
+                  </div>
+                  
+                  {settlement.stampResult.stampPenalty > 0 && (
+                    <div className="text-red-600">
+                      扣款: ¥{settlement.stampResult.stampPenalty}
+                    </div>
+                  )}
+                  
+                  <div className={`flex items-center gap-1 ${
+                    settlement.stampResult.officialRepChange >= 0 ? 'text-indigo-600' : 'text-red-600'
+                  }`}>
+                    <Shield className="w-4 h-4" />
+                    <span>官府声望: </span>
+                    <span className="font-bold">
+                      {settlement.stampResult.officialRepChange >= 0 ? '+' : ''}
+                      {settlement.stampResult.officialRepChange}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <h4 className="text-lg font-semibold text-slate-700 mb-3 flex items-center gap-2">

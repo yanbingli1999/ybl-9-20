@@ -14,6 +14,8 @@ import type {
   Weather,
   GameEvent,
   ReputationGrade,
+  OfficialDocument,
+  StampCheckpoint,
 } from '../../shared/types';
 import { api } from '../services/api';
 import {
@@ -26,6 +28,9 @@ import {
   getCurrentDate,
   calculateWarehouseUsedSpace,
   calculateTotalGameHours,
+  generateOfficialDocuments,
+  canMixWithOfficialDocument,
+  calculateOfficialRank,
 } from '../utils/gameLogic';
 import {
   calculateReputationGrade,
@@ -44,6 +49,7 @@ import {
 interface GameState {
   player: Player;
   commissions: Commission[];
+  officialDocuments: OfficialDocument[];
   trips: Trip[];
   vehicles: PlayerVehicle[];
   warehouse: Warehouse;
@@ -56,10 +62,12 @@ interface GameState {
   vehicleTemplates: Vehicle[];
   weatherList: Weather[];
   eventsList: GameEvent[];
+  stampCheckpoints: StampCheckpoint[];
   
   selectedCommissions: string[];
   selectedVehicle: string | null;
   selectedRoute: string | null;
+  selectedOfficialDocument: string | null;
   currentSettlement: TripSettlement | null;
   showSettlement: boolean;
   currentEvent: GameEvent | null;
@@ -77,10 +85,13 @@ interface GameState {
   newGame: () => void;
   
   generateDailyCommissions: () => void;
+  generateDailyOfficialDocuments: () => void;
   acceptCommission: (commissionId: string) => boolean;
+  acceptOfficialDocument: (documentId: string) => boolean;
   selectCommission: (commissionId: string) => void;
   selectVehicle: (vehicleId: string) => void;
   selectRoute: (routeId: string) => void;
+  selectOfficialDocument: (documentId: string | null) => void;
   
   startTrip: () => Promise<boolean>;
   processTripEvents: (tripId: string) => void;
@@ -103,6 +114,7 @@ interface GameState {
 export const useGameStore = create<GameState>((set, get) => ({
   player: createInitialSaveGame().player,
   commissions: [],
+  officialDocuments: [],
   trips: [],
   vehicles: createInitialSaveGame().vehicles,
   warehouse: createInitialSaveGame().warehouse,
@@ -115,10 +127,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   vehicleTemplates: [],
   weatherList: [],
   eventsList: [],
+  stampCheckpoints: [],
   
   selectedCommissions: [],
   selectedVehicle: null,
   selectedRoute: null,
+  selectedOfficialDocument: null,
   currentSettlement: null,
   showSettlement: false,
   currentEvent: null,
@@ -142,6 +156,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           vehicles: Vehicle[];
           weather: Weather[];
           events: GameEvent[];
+          stamps: StampCheckpoint[];
         };
         set({
           cities: data.cities,
@@ -150,6 +165,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           vehicleTemplates: data.vehicles,
           weatherList: data.weather,
           eventsList: data.events,
+          stampCheckpoints: data.stamps || [],
         });
       }
     } catch (error) {
@@ -165,10 +181,19 @@ export const useGameStore = create<GameState>((set, get) => ({
       const response = await api.save.get();
       if (response.success && response.data) {
         const saveData = response.data as SaveGame;
+        const player = saveData.player;
+        if (player.officialReputation === undefined) {
+          player.officialReputation = 0;
+          player.officialRank = '见习信使';
+        }
         set({
-          player: saveData.player,
+          player,
           commissions: saveData.commissions,
-          trips: saveData.trips,
+          officialDocuments: saveData.officialDocuments || [],
+          trips: saveData.trips.map(t => ({
+            ...t,
+            obtainedStamps: t.obtainedStamps || [],
+          })),
           vehicles: saveData.vehicles,
           warehouse: saveData.warehouse,
           ledger: saveData.ledger,
@@ -192,6 +217,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const saveData: SaveGame = {
       player: state.player,
       commissions: state.commissions,
+      officialDocuments: state.officialDocuments,
       trips: state.trips,
       vehicles: state.vehicles,
       warehouse: state.warehouse,
@@ -215,6 +241,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       player: initial.player,
       commissions: [],
+      officialDocuments: [],
       trips: [],
       vehicles: initial.vehicles,
       warehouse: initial.warehouse,
@@ -223,6 +250,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       selectedCommissions: [],
       selectedVehicle: null,
       selectedRoute: null,
+      selectedOfficialDocument: null,
       currentSettlement: null,
       showSettlement: false,
       currentEvent: null,
@@ -232,6 +260,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
     
     get().generateDailyCommissions();
+    get().generateDailyOfficialDocuments();
   },
   
   generateDailyCommissions: () => {
@@ -248,6 +277,23 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     set({
       commissions: [...filteredCommissions, ...newCommissions],
+    });
+  },
+  
+  generateDailyOfficialDocuments: () => {
+    const state = get();
+    const newDocuments = generateOfficialDocuments(
+      state.cities,
+      state.stampCheckpoints,
+      state.player.officialReputation,
+      2
+    );
+    
+    const existingDocs = state.officialDocuments.filter(d => d.isAccepted && !d.isCompleted);
+    const filteredDocs = state.officialDocuments.filter(d => d.isCompleted);
+    
+    set({
+      officialDocuments: [...filteredDocs, ...existingDocs, ...newDocuments],
     });
   },
   
@@ -292,6 +338,33 @@ export const useGameStore = create<GameState>((set, get) => ({
     return true;
   },
   
+  acceptOfficialDocument: (documentId: string) => {
+    const state = get();
+    const doc = state.officialDocuments.find(d => d.id === documentId);
+    if (!doc) return false;
+    
+    const acceptedGameHours = calculateTotalGameHours(state.player.currentDay, state.player.timeOfDay);
+    
+    const updatedDocuments = state.officialDocuments.map(d =>
+      d.id === documentId ? {
+        ...d,
+        isAccepted: true,
+        acceptedAt: Date.now(),
+        acceptedGameHours,
+      } : d
+    );
+    
+    set({
+      officialDocuments: updatedDocuments,
+    });
+    
+    return true;
+  },
+  
+  selectOfficialDocument: (documentId: string | null) => {
+    set({ selectedOfficialDocument: documentId });
+  },
+  
   selectCommission: (commissionId: string) => {
     const state = get();
     const commission = state.commissions.find(c => c.id === commissionId);
@@ -325,10 +398,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     try {
       const state = get();
-      const { selectedCommissions, selectedVehicle, selectedRoute } = state;
+      const { selectedCommissions, selectedVehicle, selectedRoute, selectedOfficialDocument } = state;
       
-      if (selectedCommissions.length === 0) {
-        set({ error: '请选择要运输的货物' });
+      if (selectedCommissions.length === 0 && !selectedOfficialDocument) {
+        set({ error: '请选择要运输的货物或公文' });
         return false;
       }
       if (!selectedVehicle) {
@@ -355,6 +428,27 @@ export const useGameStore = create<GameState>((set, get) => ({
         c => selectedCommissions.includes(c.id)
       );
       
+      const officialDoc = selectedOfficialDocument
+        ? state.officialDocuments.find(d => d.id === selectedOfficialDocument)
+        : null;
+      
+      if (officialDoc && !officialDoc.isAccepted) {
+        set({ error: '公文尚未承接' });
+        return false;
+      }
+      
+      if (officialDoc && selectedCommissions.length > 0) {
+        const canMix = canMixWithOfficialDocument(
+          state.goodsList,
+          selectedCommissions,
+          state.commissions
+        );
+        if (!canMix) {
+          set({ error: '公文不可与饮品、奢侈品、食品类货物混装' });
+          return false;
+        }
+      }
+      
       const hasShipped = commissions.some(c => c.isShipped || c.isCompleted);
       if (hasShipped) {
         set({ error: '部分货物已派送，请重新选择' });
@@ -368,6 +462,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (alreadyInOtherTrip) {
         set({ error: '部分货物已在其他运输中，请重新选择' });
         return false;
+      }
+      
+      if (officialDoc) {
+        const docInOtherTrip = activeTrips.some(
+          t => t.officialDocumentId === officialDoc.id
+        );
+        if (docInOtherTrip) {
+          set({ error: '该公文已在其他运输中' });
+          return false;
+        }
       }
       
       const loadCalc = calculateLoad(vehicle, commissions, state.goodsList);
@@ -403,6 +507,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         events: [],
         eventEffects: [],
         totalCost: tripCost,
+        officialDocumentId: selectedOfficialDocument || undefined,
+        obtainedStamps: [],
       };
       
       const updatedVehicles = state.vehicles.map(v =>
@@ -419,13 +525,26 @@ export const useGameStore = create<GameState>((set, get) => ({
         } : c
       );
       
+      const updatedDocuments = officialDoc
+        ? state.officialDocuments.map(d =>
+            d.id === officialDoc.id ? {
+              ...d,
+              isShipped: true,
+              shippedAt: Date.now(),
+              shippedGameHours,
+            } : d
+          )
+        : state.officialDocuments;
+      
       set({
         trips: [...state.trips, trip],
         vehicles: updatedVehicles,
         commissions: updatedCommissions,
+        officialDocuments: updatedDocuments,
         selectedCommissions: [],
         selectedVehicle: null,
         selectedRoute: null,
+        selectedOfficialDocument: null,
       });
       
       await get().saveGame();
@@ -574,6 +693,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       c => trip.commissionIds.includes(c.id)
     );
     
+    const officialDoc = trip.officialDocumentId
+      ? state.officialDocuments.find(d => d.id === trip.officialDocumentId) || null
+      : null;
+    
     const loadCalc = calculateLoad(vehicle, commissions, state.goodsList);
     
     const routeCalc = calculateRouteTime(route, vehicle, weather);
@@ -587,7 +710,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       loadCalc.isOverloaded,
       trip.eventEffects,
       state.player.priceBonus,
-      routeCalc.totalTime
+      routeCalc.totalTime,
+      officialDoc,
+      state.stampCheckpoints,
+      route
     );
     
     const ledgerEntries = generateLedgerEntries(
@@ -608,6 +734,21 @@ export const useGameStore = create<GameState>((set, get) => ({
       return c;
     });
     
+    const updatedDocuments = officialDoc
+      ? state.officialDocuments.map(d => {
+          if (d.id === officialDoc.id) {
+            const obtainedStamps = settlement.stampResult?.obtainedStamps || [];
+            return {
+              ...d,
+              isCompleted: true,
+              completedAt: Date.now(),
+              obtainedStamps,
+            };
+          }
+          return d;
+        })
+      : state.officialDocuments;
+    
     const updatedVehicles = state.vehicles.map(v =>
       v.id === trip.vehicleId ? { ...v, isAvailable: true } : v
     );
@@ -618,6 +759,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         status: 'completed' as const,
         actualArrivalTime: Date.now(),
         actualArrivalGameHours: arrivalGameHours,
+        obtainedStamps: settlement.stampResult?.obtainedStamps || [],
       } : t
     );
     
@@ -625,6 +767,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       state.player.reputation + settlement.reputationChange
     ));
     const repInfo = calculateReputationGrade(newReputation);
+    
+    let newOfficialRep = state.player.officialReputation;
+    if (settlement.stampResult) {
+      newOfficialRep = Math.max(0, Math.min(1000,
+        newOfficialRep + settlement.stampResult.officialRepChange
+      ));
+    }
+    const newOfficialRank = calculateOfficialRank(newOfficialRep);
     
     const usedSpace = calculateWarehouseUsedSpace(
       updatedCommissions,
@@ -639,8 +789,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         reputation: newReputation,
         reputationGrade: repInfo.grade as ReputationGrade,
         priceBonus: repInfo.priceBonus,
+        officialReputation: newOfficialRep,
+        officialRank: newOfficialRank,
       },
       commissions: updatedCommissions,
+      officialDocuments: updatedDocuments,
       vehicles: updatedVehicles,
       trips: updatedTrips,
       ledger: [...state.ledger, ...ledgerEntries],
@@ -711,6 +864,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (newPlayer.timeOfDay === 'morning') {
       weather = getRandomWeather(state.weatherList);
       get().generateDailyCommissions();
+      get().generateDailyOfficialDocuments();
     }
     
     set({

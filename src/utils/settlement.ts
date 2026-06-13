@@ -6,9 +6,11 @@ import type {
   GameEvent, 
   SettlementResult,
   LedgerEntry,
-  ReputationGrade
+  ReputationGrade,
+  OfficialDocument,
+  StampCheckpoint
 } from '../../shared/types';
-import { calculateIsLateGameTime } from './gameLogic';
+import { calculateIsLateGameTime, calculateStampPenalty, calculateOfficialRepChange, getStampsForRoute } from './gameLogic';
 
 export interface TripSettlement {
   tripId: string;
@@ -31,6 +33,17 @@ export interface TripSettlement {
   events: string[];
   lateCount: number;
   damageCount: number;
+  stampResult?: {
+    documentId: string;
+    documentTitle: string;
+    requiredStamps: string[];
+    obtainedStamps: string[];
+    missingStamps: string[];
+    allStampsObtained: boolean;
+    stampPenalty: number;
+    officialRepChange: number;
+    grade: 'ordinary' | 'urgent' | 'imperial';
+  };
 }
 
 export const calculateReputationGrade = (score: number): { grade: ReputationGrade; priceBonus: number } => {
@@ -88,7 +101,10 @@ export const settleTrip = (
   isOverloaded: boolean,
   eventEffects: { title: string; effect: any }[],
   reputationBonus: number,
-  totalTripHours: number
+  totalTripHours: number,
+  officialDocument?: OfficialDocument | null,
+  stamps?: StampCheckpoint[],
+  route?: { fromCityId: string; toCityId: string } | null
 ): TripSettlement => {
   let totalIncome = 0;
   let totalExpense = trip.totalCost;
@@ -191,18 +207,50 @@ export const settleTrip = (
   });
   
   const totalProfit = totalIncome - totalExpense;
-  
+
+  let stampResult: TripSettlement['stampResult'] = undefined;
+  if (officialDocument && route && stamps) {
+    const routeStamps = getStampsForRoute(route, stamps, officialDocument.requiredStamps);
+    const obtainedStampIds = routeStamps.map(s => s.id);
+    const allObtained = officialDocument.requiredStamps.every(id => obtainedStampIds.includes(id));
+    const missing = officialDocument.requiredStamps.filter(id => !obtainedStampIds.includes(id));
+    const stampPenalty = calculateStampPenalty(officialDocument.requiredStamps, obtainedStampIds, officialDocument.reward);
+    const officialRepChange = calculateOfficialRepChange(allObtained, officialDocument.grade, missing.length);
+
+    if (!allObtained) {
+      totalExpense += stampPenalty;
+    }
+
+    const docReward = allObtained
+      ? officialDocument.reward
+      : Math.max(0, officialDocument.reward - stampPenalty);
+    totalIncome += docReward;
+
+    stampResult = {
+      documentId: officialDocument.id,
+      documentTitle: officialDocument.title,
+      requiredStamps: officialDocument.requiredStamps,
+      obtainedStamps: obtainedStampIds,
+      missingStamps: missing,
+      allStampsObtained: allObtained,
+      stampPenalty,
+      officialRepChange,
+      grade: officialDocument.grade,
+    };
+  }
+
   return {
     tripId: trip.id,
     commissions: settledCommissions,
     tripCost: trip.totalCost,
     totalIncome,
     totalExpense,
-    totalProfit,
+    totalProfit: totalIncome - totalExpense,
     reputationChange,
     events: eventDescriptions,
     lateCount,
     damageCount,
+    stampResult,
   };
 };
 
@@ -265,6 +313,33 @@ export const generateLedgerEntries = (
       });
     }
   });
+
+  if (settlement.stampResult) {
+    if (settlement.stampResult.stampPenalty > 0) {
+      entries.push({
+        id: '',
+        type: 'expense',
+        description: `缺印罚款 - ${settlement.stampResult.documentTitle} (缺${settlement.stampResult.missingStamps.length}印)`,
+        amount: settlement.stampResult.stampPenalty,
+        date,
+        day,
+        category: '公文',
+        createdAt: 0,
+      });
+    }
+    if (settlement.stampResult.allStampsObtained) {
+      entries.push({
+        id: '',
+        type: 'income',
+        description: `公文送达 - ${settlement.stampResult.documentTitle} (印章齐全)`,
+        amount: 0,
+        date,
+        day,
+        category: '公文',
+        createdAt: 0,
+      });
+    }
+  }
   
   return entries;
 };

@@ -68,6 +68,35 @@ export interface GameEvent {
   probability: number;
 }
 
+export interface StampCheckpoint {
+  id: string;
+  name: string;
+  cityId: string;
+  type: 'gate' | 'station';
+  description: string;
+}
+
+export interface OfficialDocument {
+  id: string;
+  title: string;
+  destinationId: string;
+  destinationName?: string;
+  reward: number;
+  deadlineHours: number;
+  requiredStamps: string[];
+  isAccepted: boolean;
+  isShipped?: boolean;
+  isCompleted?: boolean;
+  obtainedStamps: string[];
+  grade: 'ordinary' | 'urgent' | 'imperial';
+  createdAt?: number;
+  acceptedAt?: number;
+  acceptedGameHours?: number;
+  shippedAt?: number;
+  shippedGameHours?: number;
+  completedAt?: number;
+}
+
 export interface Commission {
   id: string;
   goodsId: string;
@@ -119,6 +148,8 @@ export interface Trip {
   events: string[];
   eventEffects: { title: string; effect: any }[];
   totalCost: number;
+  officialDocumentId?: string;
+  obtainedStamps: string[];
 }
 
 export interface Warehouse {
@@ -151,11 +182,14 @@ export interface Player {
   priceBonus: number;
   currentDay: number;
   timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night';
+  officialReputation: number;
+  officialRank: string;
 }
 
 export interface SaveGame {
   player: Player;
   commissions: Commission[];
+  officialDocuments: OfficialDocument[];
   trips: Trip[];
   vehicles: PlayerVehicle[];
   warehouse: Warehouse;
@@ -180,4 +214,15 @@ export interface SettlementResult {
   totalProfit: number;
   reputationChange: number;
   events: string[];
+  stampResult?: {
+    documentId: string;
+    documentTitle: string;
+    requiredStamps: string[];
+    obtainedStamps: string[];
+    missingStamps: string[];
+    allStampsObtained: boolean;
+    stampPenalty: number;
+    officialRepChange: number;
+    grade: 'ordinary' | 'urgent' | 'imperial';
+  };
 }
