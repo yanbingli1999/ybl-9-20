@@ -35,28 +35,39 @@ const RoutePlanner = () => {
   const acceptedCommissions = commissions.filter(c => c.isAccepted && !c.isShipped && !c.isCompleted);
   const acceptedDocuments = officialDocuments.filter(d => d.isAccepted && !d.isShipped && !d.isCompleted);
   
+  const selectedDocumentData = selectedOfficialDocument
+    ? officialDocuments.find(d => d.id === selectedOfficialDocument)
+    : null;
+  
+  const effectiveDestinationId = selectedDocumentData
+    ? selectedDocumentData.destinationId
+    : destinationId;
+  
+  const filteredCommissions = useMemo(() => {
+    if (!selectedDocumentData) return acceptedCommissions;
+    return acceptedCommissions.filter(
+      c => c.destinationId === selectedDocumentData.destinationId
+    );
+  }, [acceptedCommissions, selectedDocumentData]);
+  
   const availableVehicles = vehicles.filter(v => v.isAvailable);
   
   const availableRoutes = useMemo(() => {
-    if (!destinationId) return [];
+    if (!effectiveDestinationId) return [];
     return routes.filter(
       r => 
-        (r.fromCityId === 'yuegang' && r.toCityId === destinationId) ||
-        (r.fromCityId === destinationId && r.toCityId === 'yuegang')
+        (r.fromCityId === 'yuegang' && r.toCityId === effectiveDestinationId) ||
+        (r.fromCityId === effectiveDestinationId && r.toCityId === 'yuegang')
     );
-  }, [routes, destinationId]);
+  }, [routes, effectiveDestinationId]);
   
   const selectedCommissionsData = selectedCommissions.map(id => 
     commissions.find(c => c.id === id)
   ).filter(Boolean);
   
-  const selectedDocumentData = selectedOfficialDocument
-    ? officialDocuments.find(d => d.id === selectedOfficialDocument)
-    : null;
-  
   const selectedVehicleData = vehicles.find(v => v.id === selectedVehicle);
   const selectedRouteData = routes.find(r => r.id === selectedRoute);
-  const destination = cities.find(c => c.id === destinationId);
+  const destination = cities.find(c => c.id === effectiveDestinationId);
   
   const routeCalculation = useMemo(() => {
     if (!selectedRouteData || !selectedVehicleData || !currentWeather) return null;
@@ -145,20 +156,27 @@ const RoutePlanner = () => {
             <div className="bg-white rounded-xl shadow-md p-5">
               <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <Truck className="w-5 h-5 text-amber-500" />
-                待运货物 ({acceptedCommissions.length})
+                待运货物 ({filteredCommissions.length})
+                {selectedDocumentData && (
+                  <span className="text-xs text-slate-400 font-normal ml-1">
+                    (同目的地筛选)
+                  </span>
+                )}
               </h3>
               
-              {acceptedCommissions.length === 0 && acceptedDocuments.length === 0 ? (
+              {filteredCommissions.length === 0 && acceptedDocuments.length === 0 ? (
                 <div className="text-center py-8 text-slate-500">
                   暂无待运货物或公文，请先在港口大厅接单
                 </div>
-              ) : acceptedCommissions.length === 0 ? (
+              ) : filteredCommissions.length === 0 ? (
                 <div className="text-center py-4 text-slate-400 text-sm">
-                  无普通货物待运
+                  {selectedDocumentData 
+                    ? `无发往 ${destination?.name} 的普通货物`
+                    : '无普通货物待运'}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {acceptedCommissions.map(commission => (
+                  {filteredCommissions.map(commission => (
                     <CommissionCard
                       key={commission.id}
                       commission={commission}
@@ -175,36 +193,56 @@ const RoutePlanner = () => {
               <div className="bg-white rounded-xl shadow-md p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-amber-500" />
-                  选择目的地
+                  目的地
+                  {selectedDocumentData && (
+                    <span className="text-xs text-indigo-500 font-normal ml-1">
+                      (公文指定，不可更改)
+                    </span>
+                  )}
                 </h3>
                 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {cities.filter(c => c.id !== 'yuegang').map(city => (
-                    <button
-                      key={city.id}
-                      onClick={() => {
-                        setDestinationId(city.id);
-                        selectRoute('');
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all text-left ${
-                        destinationId === city.id
-                          ? 'border-amber-500 bg-amber-50'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="font-medium text-slate-800">{city.name}</div>
-                      <div className="text-xs text-slate-500 capitalize">
-                        {city.type === 'port' ? '港口' : 
-                         city.type === 'capital' ? '都城' :
-                         city.type === 'overseas' ? '海外' : '城市'}
+                {selectedDocumentData ? (
+                  <div className="p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg flex items-center gap-3">
+                    <Shield className="w-6 h-6 text-indigo-500" />
+                    <div>
+                      <div className="font-medium text-indigo-800">
+                        {destination?.name}
                       </div>
-                    </button>
-                  ))}
-                </div>
+                      <div className="text-xs text-indigo-600">
+                        公文指定目的地，路线已锁定
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {cities.filter(c => c.id !== 'yuegang').map(city => (
+                      <button
+                        key={city.id}
+                        onClick={() => {
+                          setDestinationId(city.id);
+                          selectRoute('');
+                        }}
+                        className={`p-3 rounded-lg border-2 transition-all text-left ${
+                          destinationId === city.id
+                            ? 'border-amber-500 bg-amber-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                        disabled={selectedDocumentData !== null}
+                      >
+                        <div className="font-medium text-slate-800">{city.name}</div>
+                        <div className="text-xs text-slate-500 capitalize">
+                          {city.type === 'port' ? '港口' : 
+                           city.type === 'capital' ? '都城' :
+                           city.type === 'overseas' ? '海外' : '城市'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             
-            {destinationId && (
+            {effectiveDestinationId && (
               <div className="bg-white rounded-xl shadow-md p-5">
                 <h3 className="font-semibold text-slate-800 mb-4">
                   可选路线 - {destination?.name}

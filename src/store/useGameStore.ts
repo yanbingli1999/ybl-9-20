@@ -472,6 +472,24 @@ export const useGameStore = create<GameState>((set, get) => ({
           set({ error: '该公文已在其他运输中' });
           return false;
         }
+        
+        const routeDestination = route.toCityId === 'yuegang'
+          ? route.fromCityId
+          : route.toCityId;
+        if (officialDoc.destinationId !== routeDestination) {
+          set({ error: '公文目的地与路线终点不一致' });
+          return false;
+        }
+        
+        if (commissions.length > 0) {
+          const mismatchedCommission = commissions.find(
+            c => c.destinationId !== officialDoc.destinationId
+          );
+          if (mismatchedCommission) {
+            set({ error: '普通货物目的地需与公文目的地一致' });
+            return false;
+          }
+        }
       }
       
       const loadCalc = calculateLoad(vehicle, commissions, state.goodsList);

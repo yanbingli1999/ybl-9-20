@@ -127,12 +127,10 @@ const OfficialDocumentCard = ({
             </div>
           </div>
 
-          {document.grade !== 'ordinary' && (
-            <div className="flex items-center gap-1 text-xs text-amber-600">
-              <AlertTriangle className="w-3 h-3" />
-              不可与饮品、奢侈品、食品混装
-            </div>
-          )}
+          <div className="flex items-center gap-1 text-xs text-amber-600">
+            <AlertTriangle className="w-3 h-3" />
+            不可与饮品、奢侈品、食品混装
+          </div>
         </div>
 
         <div className="flex items-center justify-between pt-3 border-t border-slate-100">

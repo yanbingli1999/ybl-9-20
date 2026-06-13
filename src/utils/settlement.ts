@@ -217,10 +217,6 @@ export const settleTrip = (
     const stampPenalty = calculateStampPenalty(officialDocument.requiredStamps, obtainedStampIds, officialDocument.reward);
     const officialRepChange = calculateOfficialRepChange(allObtained, officialDocument.grade, missing.length);
 
-    if (!allObtained) {
-      totalExpense += stampPenalty;
-    }
-
     const docReward = allObtained
       ? officialDocument.reward
       : Math.max(0, officialDocument.reward - stampPenalty);
